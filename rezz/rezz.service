@@ -1,0 +1,11 @@
+[Unit]
+Description=RTC wake daemon
+
+[Service]
+ExecStart=/usr/bin/rezz
+Type=dbus
+BusName=org.catacombing.rezz
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

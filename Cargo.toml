@@ -1,0 +1,23 @@
+[package]
+name = "alarm"
+version = "0.1.0"
+description = "CLI and GTK4 alarm clock"
+authors = ["Christian Duerr <contact@christianduerr.com>"]
+repository = "https://github.com/catacombing/alarm"
+rust-version = "1.74.0"
+license = "GPL-3.0"
+edition = "2021"
+
+[workspace]
+members = ["rezz"]
+
+[dependencies]
+clap = { version = "4.4.4", features = ["derive"] }
+rezz = { version = "0.1.0", path = "./rezz" }
+rodio = "0.17.1"
+thiserror = "1.0.48"
+time = { version = "0.3.29", features = ["formatting", "local-offset"] }
+tokio = { version = "1.32.0", features = ["macros"] }
+tokio-stream = "0.1.14"
+uuid = { version = "1.4.1", features = ["v4"] }
+zbus = { version = "3.14.1", features = ["tokio"] }
