@@ -42,11 +42,14 @@ struct DaemonArgs {}
 
 #[derive(Args, Debug)]
 struct AddArgs {
-    /// ID used to delete the alarm.
+    /// ID used to delete the alarm [default: UUID].
     #[clap(long)]
     id: Option<String>,
     /// Alarm time in RFC3339 format.
     time: ClapDateTime,
+    /// Seconds to ring the alarm for.
+    #[clap(long, short = 's', default_value_t = 600)]
+    ring_seconds: u32,
 }
 
 #[derive(Args, Debug)]
@@ -66,7 +69,7 @@ pub async fn main() {
         Subcmd::Add(args) => {
             let id = args.id.unwrap_or_else(|| Uuid::new_v4().to_string());
             let unix_time = (args.time.0 - OffsetDateTime::UNIX_EPOCH).whole_seconds();
-            let alarm = Alarm { id: id.clone(), unix_time };
+            let alarm = Alarm::new(&id, unix_time, args.ring_seconds);
 
             match Alarms.add(alarm).await {
                 Ok(()) => println!("Added alarm with ID {id:?}"),
@@ -80,7 +83,7 @@ pub async fn main() {
                     Err(err) => eprintln!("Could not remove alarm: {err}"),
                 }
             }
-        }
+        },
         Subcmd::List(_args) => {
             let alarms = match Alarms.load().await {
                 Ok(alarms) => alarms,

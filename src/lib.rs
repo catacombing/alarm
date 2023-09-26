@@ -13,9 +13,6 @@ pub mod audio;
 mod dbus;
 pub mod error;
 
-/// Maximum alarm sound playback duration.
-const MAX_RING_DURATION: Duration = Duration::from_secs(600);
-
 /// Primary alarm interface.
 pub struct Alarms;
 
@@ -46,8 +43,8 @@ impl Alarms {
                 },
                 // Ring the alarm.
                 _ = self.wait_alarm(next_alarm) => {
-                    if next_alarm.is_some() {
-                        if let Err(err) = self.ring_alarm().await {
+                    if let Some(alarm) = next_alarm {
+                        if let Err(err) = self.ring_alarm(&alarm).await {
                             eprintln!("could not ring alarm: {err}");
                         }
                     }
@@ -62,7 +59,7 @@ impl Alarms {
     pub async fn add(&self, alarm: Alarm) -> Result<(), Error> {
         let connection = Connection::system().await?;
         let rezz = RezzProxy::new(&connection).await?;
-        rezz.add_alarm(alarm.id, alarm.unix_time).await?;
+        rezz.add_alarm(alarm).await?;
         Ok(())
     }
 
@@ -85,9 +82,9 @@ impl Alarms {
     }
 
     /// Ring an alarm.
-    async fn ring_alarm(&self) -> Result<(), Error> {
+    async fn ring_alarm(&self, alarm: &Alarm) -> Result<(), Error> {
         let sound = AlarmSound::play()?;
-        time::sleep(MAX_RING_DURATION).await;
+        time::sleep(Duration::from_secs(alarm.ring_seconds as u64)).await;
         sound.stop();
         Ok(())
     }

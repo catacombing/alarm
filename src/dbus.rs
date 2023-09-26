@@ -9,7 +9,7 @@ use zbus::dbus_proxy;
     default_path = "/org/catacombing/rezz"
 )]
 trait Rezz {
-    fn add_alarm(&self, id: String, unix_time: i64) -> zbus::Result<()>;
+    fn add_alarm(&self, alarm: Alarm) -> zbus::Result<()>;
 
     fn remove_alarm(&self, id: String) -> zbus::Result<()>;
 

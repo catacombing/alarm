@@ -1,6 +1,5 @@
 //! DBus RTC wakeup server.
 
-use std::collections::HashMap;
 use std::error::Error;
 use std::fs::{self, File};
 use std::io::{Error as IoError, ErrorKind as IoErrorKind, Read, Seek, Write};
@@ -25,12 +24,6 @@ const DB_PATH: &str = "/var/lib/rezz/alarms.db";
 
 /// Update frequency on systems without logind.
 const MANUAL_UPDATE_INTERVAL: StdDuration = StdDuration::from_secs(60 * 5);
-
-// NOTE: In the future we should add a `ring_secs` field to alarms and expire
-// the alarm once its ring duration has elapsed.
-//
-/// Time before an expired alarm will be removed.
-const ALARM_REMOVAL_DELAY_SECS: i64 = 60;
 
 /// Infinite sleep timeout.
 const INFINITY: StdDuration = StdDuration::from_secs(60 * 60 * 24 * 365 * 999);
@@ -100,8 +93,9 @@ pub async fn launch() {
 
         // Update event loop alarm timeout.
         wait_alarm = match alarms.upcoming() {
-            Some(unix_time) => {
-                let seconds = unix_time.saturating_sub(unix_now()) + ALARM_REMOVAL_DELAY_SECS;
+            Some(next_alarm) => {
+                let alarm_end = next_alarm.unix_time + next_alarm.ring_seconds as i64;
+                let seconds = alarm_end.saturating_sub(unix_now());
                 tokio_time::sleep(StdDuration::from_secs(seconds as u64))
             },
             None => tokio_time::sleep(INFINITY),
@@ -215,7 +209,7 @@ impl Rezz {
         let alarms = self.alarms.read().await;
 
         // Get nearest alarm.
-        let unix_time = match alarms.upcoming() {
+        let next_alarm = match alarms.upcoming() {
             Some(next_alarm) => next_alarm,
             None => return,
         };
@@ -230,7 +224,7 @@ impl Rezz {
         };
 
         // Ignore alarms beyond the scheduled one.
-        let time = OffsetDateTime::UNIX_EPOCH + Duration::seconds(unix_time);
+        let time = OffsetDateTime::UNIX_EPOCH + Duration::seconds(next_alarm.unix_time);
         if wakeup.map_or(false, |wakeup| time >= wakeup) {
             return;
         }
@@ -244,10 +238,11 @@ impl Rezz {
 
 #[zbus::dbus_interface(name = "org.catacombing.rezz")]
 impl Rezz {
-    async fn add_alarm(&mut self, id: String, unix_time: i64) -> Result<(), ZBusError> {
+    async fn add_alarm(&mut self, alarm: Alarm) -> Result<(), ZBusError> {
+        let id = alarm.id.clone();
         let added = {
             let mut alarms = self.alarms.write().await;
-            alarms.add(id.clone(), unix_time)
+            alarms.add(alarm)
         };
 
         if !added {
@@ -261,7 +256,7 @@ impl Rezz {
     }
 
     async fn remove_alarm(&self, id: String) -> Result<(), ZBusError> {
-        let unix_time = {
+        let removed = {
             let mut alarms = self.alarms.write().await;
 
             // Remove alarm from internal cache.
@@ -289,7 +284,7 @@ impl Rezz {
         };
 
         // Ignore if staged RTC alarm does not match the alarm.
-        let time = OffsetDateTime::UNIX_EPOCH + Duration::seconds(unix_time);
+        let time = OffsetDateTime::UNIX_EPOCH + Duration::seconds(removed.unix_time);
         if time != wakeup {
             return Ok(());
         }
@@ -305,13 +300,13 @@ impl Rezz {
     #[dbus_interface(property)]
     async fn alarms(&self) -> Vec<Alarm> {
         let alarms = self.alarms.read().await;
-        alarms.alarms.iter().map(Alarm::from).collect()
+        alarms.alarms.clone()
     }
 }
 
 /// Filesystem-based alarm store.
 struct Store {
-    alarms: HashMap<String, i64>,
+    alarms: Vec<Alarm>,
     onchange_rx: watch::Receiver<()>,
     onchange_tx: watch::Sender<()>,
     db: File,
@@ -347,8 +342,8 @@ impl Store {
     }
 
     /// Get the next alarm.
-    fn upcoming(&self) -> Option<i64> {
-        self.alarms.values().min().copied()
+    fn upcoming(&self) -> Option<&Alarm> {
+        self.alarms.iter().min_by_key(|alarm| alarm.unix_time)
     }
 
     /// Add a new alarm.
@@ -356,12 +351,12 @@ impl Store {
     /// Returns `true` if the alarm was added and `false` if another alarm with
     /// the
     /// ID ID already exists.
-    fn add(&mut self, id: String, unix_time: i64) -> bool {
-        if self.alarms.contains_key(&id) {
+    fn add(&mut self, alarm: Alarm) -> bool {
+        if self.alarms.iter().any(|existing_alarm| existing_alarm.id == alarm.id) {
             return false;
         }
 
-        self.alarms.insert(id, unix_time);
+        self.alarms.push(alarm);
 
         self.sync();
 
@@ -369,14 +364,13 @@ impl Store {
     }
 
     /// Remove an existing alarm.
-    fn remove(&mut self, id: &String) -> Option<i64> {
-        let removed = self.alarms.remove(id);
+    fn remove(&mut self, id: &str) -> Option<Alarm> {
+        let matching = self.alarms.iter().position(|alarm| alarm.id == id)?;
+        let removed = self.alarms.remove(matching);
 
-        if removed.is_some() {
-            self.sync();
-        }
+        self.sync();
 
-        removed
+        Some(removed)
     }
 
     /// Remove all elapsed alarms.
@@ -385,7 +379,7 @@ impl Store {
     fn remove_elapsed(&mut self) -> usize {
         let old_len = self.alarms.len();
 
-        self.alarms.retain(|_, &mut unix_time| unix_time + ALARM_REMOVAL_DELAY_SECS > unix_now());
+        self.alarms.retain(|alarm| alarm.unix_time + alarm.ring_seconds as i64 > unix_now());
 
         // Update database if entries were deleted.
         let removed_count = old_len - self.alarms.len();

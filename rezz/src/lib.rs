@@ -47,14 +47,15 @@ pub fn clear_wakeup() -> Result<(), Error> {
 }
 
 /// Single alarm.
-#[derive(Deserialize, Serialize, Type, Value, OwnedValue, PartialEq, Debug)]
+#[derive(Deserialize, Serialize, Type, Value, OwnedValue, Clone, PartialEq, Debug)]
 pub struct Alarm {
     pub id: String,
     pub unix_time: i64,
+    pub ring_seconds: u32,
 }
 
-impl From<(&String, &i64)> for Alarm {
-    fn from((id, unix_time): (&String, &i64)) -> Self {
-        Self { id: id.clone(), unix_time: *unix_time }
+impl Alarm {
+    pub fn new(id: impl Into<String>, unix_time: i64, ring_seconds: u32) -> Self {
+        Self { id: id.into(), unix_time, ring_seconds }
     }
 }
