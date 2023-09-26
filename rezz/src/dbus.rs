@@ -20,6 +20,9 @@ use zbus::{Connection, ConnectionBuilder};
 
 use crate::logind::{ManagerProxy, PrepareForSleepStream};
 
+/// Database location.
+const DB_PATH: &str = "/var/lib/rezz/alarms.db";
+
 /// Update frequency on systems without logind.
 const MANUAL_UPDATE_INTERVAL: StdDuration = StdDuration::from_secs(60 * 5);
 
@@ -34,7 +37,7 @@ const INFINITY: StdDuration = StdDuration::from_secs(60 * 60 * 24 * 365 * 999);
 
 /// Start the DBus server.
 pub async fn launch() {
-    let mut rezz = match Rezz::new("/tmp/rezz.db").await {
+    let mut rezz = match Rezz::new(DB_PATH).await {
         Ok(rezz) => rezz,
         Err(err) => {
             error!("Could not read alarm DB: {err}");
