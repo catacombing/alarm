@@ -30,15 +30,25 @@ dependencies = [
 name = "alarm"
 version = "0.1.0"
 dependencies = [
- "clap",
  "rezz",
  "rodio",
  "thiserror",
- "time",
  "tokio",
  "tokio-stream",
- "uuid",
  "zbus",
+]
+
+[[package]]
+name = "alarm-cli"
+version = "0.1.0"
+dependencies = [
+ "alarm",
+ "clap",
+ "rezz",
+ "thiserror",
+ "time",
+ "tokio",
+ "uuid",
 ]
 
 [[package]]

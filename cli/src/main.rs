@@ -1,7 +1,5 @@
 //! Alarm clock CLI interface.
 
-use std::error::Error;
-use std::fmt::{self, Display, Formatter};
 use std::num::ParseIntError;
 use std::process;
 use std::str::FromStr;
@@ -105,8 +103,7 @@ pub async fn main() {
             // Print each alarm.
             for alarm in alarms {
                 // Try to convert unix seconds to local time.
-                let mut time =
-                    OffsetDateTime::UNIX_EPOCH + Duration::seconds(alarm.unix_time as i64);
+                let mut time = OffsetDateTime::UNIX_EPOCH + Duration::seconds(alarm.unix_time);
                 if let Ok(offset) = UtcOffset::current_local_offset() {
                     time = time.to_offset(offset);
                 }
@@ -146,15 +143,15 @@ impl FromStr for ClapDateTime {
 
             let year =
                 components.next().ok_or_else(|| DateTimeError::InvalidFormat(date.into()))?;
-            now.replace_year(i32::from_str(&year)?)?;
+            now.replace_year(i32::from_str(year)?)?;
 
             let month =
                 components.next().ok_or_else(|| DateTimeError::InvalidFormat(date.into()))?;
-            let month_offset = u8::from_str(&month)?.saturating_sub(1);
+            let month_offset = u8::from_str(month)?.saturating_sub(1);
             now.replace_month(Month::January.nth_next(month_offset))?;
 
             let day = components.next().ok_or_else(|| DateTimeError::InvalidFormat(date.into()))?;
-            now.replace_day(u8::from_str(&day)?)?;
+            now.replace_day(u8::from_str(day)?)?;
         }
 
         // Override time.
@@ -173,7 +170,7 @@ impl FromStr for ClapDateTime {
 
         // Add one day if time has already passed.
         if time < now.time() {
-            now = now + Duration::days(1);
+            now += Duration::days(1);
         }
 
         now = now.replace_time(time);
@@ -182,41 +179,12 @@ impl FromStr for ClapDateTime {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(thiserror::Error, Clone, Debug)]
 enum DateTimeError {
-    ComponentRange(ComponentRange),
+    #[error("invalid format: {0}")]
+    ComponentRange(#[from] ComponentRange),
+    #[error("{0}")]
     InvalidFormat(String),
-    ParseInt(ParseIntError),
-}
-
-impl Error for DateTimeError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        match self {
-            Self::ComponentRange(err) => Some(err),
-            Self::ParseInt(err) => Some(err),
-            _ => None,
-        }
-    }
-}
-
-impl Display for DateTimeError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::InvalidFormat(component) => write!(f, "invalid format: {component:?}"),
-            Self::ComponentRange(err) => write!(f, "{err}"),
-            Self::ParseInt(err) => write!(f, "{err}"),
-        }
-    }
-}
-
-impl From<ComponentRange> for DateTimeError {
-    fn from(error: ComponentRange) -> Self {
-        Self::ComponentRange(error)
-    }
-}
-
-impl From<ParseIntError> for DateTimeError {
-    fn from(error: ParseIntError) -> Self {
-        Self::ParseInt(error)
-    }
+    #[error("{0}")]
+    ParseInt(#[from] ParseIntError),
 }

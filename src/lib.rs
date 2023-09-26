@@ -44,7 +44,7 @@ impl Alarms {
                 // Ring the alarm.
                 _ = self.wait_alarm(next_alarm) => {
                     if let Some(alarm) = next_alarm {
-                        if let Err(err) = self.ring_alarm(&alarm).await {
+                        if let Err(err) = self.ring_alarm(alarm).await {
                             eprintln!("could not ring alarm: {err}");
                         }
                     }
@@ -93,14 +93,14 @@ impl Alarms {
     ///
     /// This will ignore all elapsed alarms and sort the array to ensure optimal
     /// performance.
-    fn next_alarm<'a, 'b>(&'a self, alarms: &'b mut Vec<Alarm>) -> Option<&'b Alarm> {
+    fn next_alarm<'b>(&self, alarms: &'b mut [Alarm]) -> Option<&'b Alarm> {
         // Get seconds since unix epoch.
         let current_secs =
             SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
 
         // Get the next non-elapsed alarm.
         alarms.sort_by(|a, b| a.unix_time.cmp(&b.unix_time));
-        alarms.iter().skip_while(|alarm| alarm.unix_time as u64 <= current_secs).next()
+        alarms.iter().find(|alarm| alarm.unix_time as u64 > current_secs)
     }
 
     /// Convert alarm to tokio async sleep.
