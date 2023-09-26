@@ -41,8 +41,6 @@ impl Alarms {
                 // Handle alarm updates.
                 Some(new_alarms) = alarms_stream.next() => {
                     if let Ok(new_alarms) = new_alarms.get().await {
-                        println!("UPDATING ALARMS TO {:?}", new_alarms);
-                        println!("SERVER HAS: {:?}", rezz.alarms().await.unwrap_or_default());
                         alarms = new_alarms;
                     }
                 },
