@@ -3,7 +3,7 @@ use std::time::{Duration, SystemTime};
 use rezz::Alarm;
 use tokio::time::{self, Instant, Sleep};
 use tokio_stream::StreamExt;
-use zbus::Connection;
+use zbus::{Connection, PropertyStream};
 
 use crate::audio::AlarmSound;
 use crate::dbus::RezzProxy;
@@ -53,6 +53,11 @@ impl Alarms {
 
             next_alarm = self.next_alarm(&mut alarms);
         }
+    }
+
+    /// Get a subscription for alarm changes.
+    pub async fn change_listener(&self) -> Result<ChangeListener, Error> {
+        ChangeListener::new().await
     }
 
     /// Add a new alarm.
@@ -116,5 +121,37 @@ impl Alarms {
             SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
         let instant = Instant::now() + Duration::from_secs(alarm.unix_time as u64 - current_secs);
         time::sleep_until(instant)
+    }
+}
+
+/// Subscribe to alarm changes.
+pub struct ChangeListener {
+    stream: PropertyStream<'static, Vec<Alarm>>,
+}
+
+impl ChangeListener {
+    async fn new() -> Result<Self, Error> {
+        // Setup DBus connection.
+        let connection = Connection::system().await?;
+        let rezz = RezzProxy::new(&connection).await?;
+
+        // Create listener for alarms change.
+        let stream = rezz.receive_alarms_changed().await;
+
+        Ok(Self { stream })
+    }
+
+    /// Await the next alarms change.
+    pub async fn next(&mut self) -> Vec<Alarm> {
+        loop {
+            let next = match self.stream.next().await {
+                Some(next) => next,
+                None => continue,
+            };
+
+            if let Ok(alarms) = next.get().await {
+                return alarms;
+            }
+        }
     }
 }

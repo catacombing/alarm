@@ -1,0 +1,11 @@
+* {
+    border-radius: 0;
+}
+
+.time-button-box > label {
+    background: #ffffff05;
+}
+
+.time-box {
+    font-size: 1.5em;
+}
