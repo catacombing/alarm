@@ -3,7 +3,7 @@ name = "rezz"
 version = "0.1.0"
 description = "DBus RTC alarm clock daemon"
 repository = "https://github.com/catacombing/alarm"
-rust-version = "1.74.0"
+rust-version = "1.72.1"
 license = "GPL-3.0"
 edition = "2021"
 
