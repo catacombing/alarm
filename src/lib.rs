@@ -1,7 +1,6 @@
 use std::time::{Duration, SystemTime};
 
 use rezz::Alarm;
-use tokio::time::{self, Instant, Sleep};
 use tokio_stream::StreamExt;
 use zbus::{Connection, PropertyStream};
 
@@ -11,6 +10,7 @@ use crate::error::Error;
 pub mod audio;
 mod dbus;
 pub mod error;
+mod timer;
 
 /// Primary alarm interface.
 pub struct Alarms;
@@ -106,18 +106,18 @@ impl Subscriber<'static> {
     }
 
     /// Convert alarm to tokio async sleep.
-    fn wait_alarm(alarm: Option<&Alarm>) -> Sleep {
-        // Default to an hour without alarm present.
-        let alarm = match alarm {
-            Some(alarm) => alarm,
-            None => return time::sleep(Duration::from_secs(60 * 60)),
+    async fn wait_alarm(alarm: Option<&Alarm>) -> Result<(), Error> {
+        // Get time until alarm.
+        let target = match alarm {
+            Some(alarm) => SystemTime::UNIX_EPOCH + Duration::from_secs(alarm.unix_time as u64),
+            // Default to an hour without alarm present.
+            None => SystemTime::now() + Duration::from_secs(60 * 60),
         };
 
-        // Get time until alarm.
-        let current_secs =
-            SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
-        let instant = Instant::now() + Duration::from_secs(alarm.unix_time as u64 - current_secs);
-        time::sleep_until(instant)
+        // Wait for timer to elapse.
+        timer::sleep_until(target).await?;
+
+        Ok(())
     }
 }
 

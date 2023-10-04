@@ -30,9 +30,11 @@ dependencies = [
 name = "alarm"
 version = "0.1.0"
 dependencies = [
+ "libc",
  "rezz",
  "rodio",
  "thiserror",
+ "time",
  "tokio",
  "tokio-stream",
  "zbus",
