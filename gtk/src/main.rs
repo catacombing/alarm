@@ -1,6 +1,3 @@
-use std::time::Duration as StdDuration;
-
-use alarm::audio::AlarmSound;
 use alarm::{Alarms, Event, Subscriber};
 use gtk4::gdk::Display;
 use gtk4::glib::{ExitCode, MainContext};
@@ -15,9 +12,11 @@ use time::{Duration, OffsetDateTime, UtcOffset};
 
 use crate::navigation::{Navigator, Page};
 use crate::new_alarm::NewAlarmPage;
+use crate::ringing_alarm::RingingAlarmPage;
 
 pub mod navigation;
 mod new_alarm;
+mod ringing_alarm;
 
 /// Wayland application ID.
 const APP_ID: &str = "catacomb.Alarm";
@@ -61,13 +60,15 @@ fn activate(app: &Application) {
     window.set_child(Some(navigator.widget()));
 
     // Add alarm creation page.
-    let new_navigator = navigator.clone();
-    let new_alarm_page = NewAlarmPage::new(new_navigator);
+    let new_alarm_page = NewAlarmPage::new(navigator.clone());
     navigator.add(&new_alarm_page);
 
+    // Add ringing alarm page.
+    let ringing_alarm_page = RingingAlarmPage::new(navigator.clone());
+    navigator.add(&ringing_alarm_page);
+
     // Add landing page.
-    let overview_navigator = navigator.clone();
-    let overview = Overview::new(overview_navigator, new_alarm_page);
+    let overview = Overview::new(navigator.clone(), new_alarm_page, ringing_alarm_page);
     navigator.add(&overview);
 
     // Show window.
@@ -82,12 +83,17 @@ fn activate(app: &Application) {
 
 /// Alarm overview and landing page.
 pub struct Overview {
+    ringing_alarm_page: RingingAlarmPage,
     container: gtk4::Box,
     alarms: gtk4::Box,
 }
 
 impl Overview {
-    fn new(navigator: Navigator, new_alarm_page: NewAlarmPage) -> Self {
+    fn new(
+        navigator: Navigator,
+        new_alarm_page: NewAlarmPage,
+        ringing_alarm_page: RingingAlarmPage,
+    ) -> Self {
         let container = gtk4::Box::new(Orientation::Vertical, 0);
         container.set_valign(Align::End);
 
@@ -106,7 +112,7 @@ impl Overview {
             navigator.show(NewAlarmPage::id());
         });
 
-        Self { container, alarms }
+        Self { container, alarms, ringing_alarm_page }
     }
 
     /// Update the view with new alarms.
@@ -161,17 +167,7 @@ impl Overview {
                 // Update alarms.
                 Some(Event::AlarmsChanged(alarms)) => self.update(alarms),
                 // Play alarm sound.
-                Some(Event::Ring(alarm)) => {
-                    let sound = match AlarmSound::play() {
-                        Ok(sound) => sound,
-                        Err(err) => {
-                            eprintln!("Could not play alarm sound: {err}");
-                            continue;
-                        },
-                    };
-                    tokio::time::sleep(StdDuration::from_secs(alarm.ring_seconds as u64)).await;
-                    sound.stop();
-                },
+                Some(Event::Ring(alarm)) => self.ringing_alarm_page.ring(alarm).await,
                 None => (),
             }
         }

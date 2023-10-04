@@ -2,6 +2,14 @@
     border-radius: 0;
 }
 
+.ringing-name {
+    font-size: 2em;
+}
+
+.ringing-time {
+    font-size: 3em;
+}
+
 .time-button-box > label {
     background: #ffffff05;
 }
