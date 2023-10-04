@@ -5,7 +5,6 @@ use tokio::time::{self, Instant, Sleep};
 use tokio_stream::StreamExt;
 use zbus::{Connection, PropertyStream};
 
-use crate::audio::AlarmSound;
 use crate::dbus::RezzProxy;
 use crate::error::Error;
 
@@ -17,49 +16,6 @@ pub mod error;
 pub struct Alarms;
 
 impl Alarms {
-    /// Run the alarm daemon.
-    ///
-    /// This will automatically monitor the alarm database and play an alarm
-    /// sound when necessary.
-    pub async fn daemon(&self) -> Result<(), Error> {
-        // Setup DBus connection.
-        let connection = Connection::system().await?;
-        let rezz = RezzProxy::new(&connection).await?;
-
-        // Create listener for alarms change.
-        let mut alarms = rezz.alarms().await?;
-        let mut alarms_stream = rezz.receive_alarms_changed().await;
-
-        // Get next alarm.
-        let mut next_alarm = self.next_alarm(&mut alarms);
-
-        loop {
-            tokio::select! {
-                // Handle alarm updates.
-                Some(new_alarms) = alarms_stream.next() => {
-                    if let Ok(new_alarms) = new_alarms.get().await {
-                        alarms = new_alarms;
-                    }
-                },
-                // Ring the alarm.
-                _ = self.wait_alarm(next_alarm) => {
-                    if let Some(alarm) = next_alarm {
-                        if let Err(err) = self.ring_alarm(alarm).await {
-                            eprintln!("could not ring alarm: {err}");
-                        }
-                    }
-                },
-            }
-
-            next_alarm = self.next_alarm(&mut alarms);
-        }
-    }
-
-    /// Get a subscription for alarm changes.
-    pub async fn change_listener(&self) -> Result<ChangeListener, Error> {
-        ChangeListener::new().await
-    }
-
     /// Add a new alarm.
     pub async fn add(&self, alarm: Alarm) -> Result<(), Error> {
         let connection = Connection::system().await?;
@@ -85,20 +41,61 @@ impl Alarms {
         let alarms = rezz.alarms().await?;
         Ok(alarms)
     }
+}
 
-    /// Ring an alarm.
-    async fn ring_alarm(&self, alarm: &Alarm) -> Result<(), Error> {
-        let sound = AlarmSound::play()?;
-        time::sleep(Duration::from_secs(alarm.ring_seconds as u64)).await;
-        sound.stop();
-        Ok(())
+/// Subscriber for alarm events.
+pub struct Subscriber<'a> {
+    alarms_stream: PropertyStream<'a, Vec<Alarm>>,
+    alarms: Vec<Alarm>,
+}
+
+impl Subscriber<'static> {
+    /// Create a new DBus alarm subscription.
+    pub async fn new() -> Result<Self, Error> {
+        // Setup DBus connection.
+        let connection = Connection::system().await?;
+        let rezz = RezzProxy::new(&connection).await?;
+
+        // Create listener for alarms change.
+        let alarms = rezz.alarms().await?;
+        let alarms_stream = rezz.receive_alarms_changed().await;
+
+        Ok(Self { alarms_stream, alarms })
+    }
+
+    /// Get the next alarm event.
+    pub async fn next(&mut self) -> Option<Event<'_>> {
+        let next_alarm = Self::next_alarm(&mut self.alarms);
+
+        tokio::select! {
+            // Handle alarm updates.
+            Some(new_alarms) = self.alarms_stream.next() => {
+                if let Ok(alarms) = new_alarms.get().await {
+                    self.alarms = alarms;
+                    return Some(Event::AlarmsChanged(&self.alarms));
+                }
+            },
+            // Ring the alarm.
+            _ = Self::wait_alarm(next_alarm) => {
+                if let Some(alarm) = next_alarm {
+                    return Some(Event::Ring(alarm.clone()));
+                }
+            },
+        }
+
+        None
+    }
+
+    /// Get all alarms.
+    pub fn alarms(&self) -> &[Alarm] {
+        self.alarms.as_slice()
     }
 
     /// Get the next alarm.
     ///
     /// This will ignore all elapsed alarms and sort the array to ensure optimal
     /// performance.
-    fn next_alarm<'b>(&self, alarms: &'b mut [Alarm]) -> Option<&'b Alarm> {
+    fn next_alarm(alarms: &mut [Alarm]) -> Option<&Alarm> {
         // Get seconds since unix epoch.
         let current_secs =
             SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
@@ -109,7 +106,7 @@ impl Alarms {
     }
 
     /// Convert alarm to tokio async sleep.
-    fn wait_alarm(&self, alarm: Option<&Alarm>) -> Sleep {
+    fn wait_alarm(alarm: Option<&Alarm>) -> Sleep {
         // Default to an hour without alarm present.
         let alarm = match alarm {
             Some(alarm) => alarm,
@@ -124,34 +121,8 @@ impl Alarms {
     }
 }
 
-/// Subscribe to alarm changes.
-pub struct ChangeListener {
-    stream: PropertyStream<'static, Vec<Alarm>>,
-}
-
-impl ChangeListener {
-    async fn new() -> Result<Self, Error> {
-        // Setup DBus connection.
-        let connection = Connection::system().await?;
-        let rezz = RezzProxy::new(&connection).await?;
-
-        // Create listener for alarms change.
-        let stream = rezz.receive_alarms_changed().await;
-
-        Ok(Self { stream })
-    }
-
-    /// Await the next alarms change.
-    pub async fn next(&mut self) -> Vec<Alarm> {
-        loop {
-            let next = match self.stream.next().await {
-                Some(next) => next,
-                None => continue,
-            };
-
-            if let Ok(alarms) = next.get().await {
-                return alarms;
-            }
-        }
-    }
+/// Alarm subscription events.
+pub enum Event<'a> {
+    AlarmsChanged(&'a [Alarm]),
+    Ring(Alarm),
 }

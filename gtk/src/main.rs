@@ -1,6 +1,7 @@
-use std::thread;
+use std::time::Duration as StdDuration;
 
-use alarm::Alarms;
+use alarm::audio::AlarmSound;
+use alarm::{Alarms, Event, Subscriber};
 use gtk4::gdk::Display;
 use gtk4::glib::{ExitCode, MainContext};
 use gtk4::prelude::*;
@@ -11,8 +12,6 @@ use rezz::Alarm;
 use time::macros::format_description;
 use time::util::local_offset::{self, Soundness};
 use time::{Duration, OffsetDateTime, UtcOffset};
-use tokio::runtime::Builder as RuntimeBuilder;
-use tokio::task::{self, LocalSet};
 
 use crate::navigation::{Navigator, Page};
 use crate::new_alarm::NewAlarmPage;
@@ -27,18 +26,6 @@ const APP_ID: &str = "catacomb.Alarm";
 async fn main() -> ExitCode {
     // Allow retrieving local offset despite multi-threading.
     unsafe { local_offset::set_soundness(Soundness::Unsound) };
-
-    // Spawn background thread to ring alarm.
-    let daemon_rt = RuntimeBuilder::new_current_thread().enable_all().build().unwrap();
-    thread::spawn(move || {
-        let local = LocalSet::new();
-        local.spawn_local(async {
-            if let Err(err) = task::spawn_local(async { Alarms.daemon().await }).await {
-                show_error(err.to_string());
-            }
-        });
-        daemon_rt.block_on(local);
-    });
 
     // Setup application.
     let application = Application::builder().application_id(APP_ID).build();
@@ -123,7 +110,7 @@ impl Overview {
     }
 
     /// Update the view with new alarms.
-    fn update(&mut self, alarms: Vec<Alarm>) {
+    fn update(&mut self, alarms: &[Alarm]) {
         let time_format = format_description!("[year]-[month]-[day] [hour]:[minute]");
         let utc_offset = UtcOffset::current_local_offset().unwrap_or(UtcOffset::UTC);
 
@@ -138,8 +125,9 @@ impl Overview {
             container.append(&button);
 
             // Remove alarm on button press.
+            let id = alarm.id.clone();
             button.connect_clicked(move |_| {
-                let id = alarm.id.clone();
+                let id = id.clone();
                 MainContext::default().spawn(async move {
                     if let Err(err) = Alarms.remove(id.clone()).await {
                         show_error(err.to_string());
@@ -156,24 +144,36 @@ impl Overview {
 
     /// Update view on new/removed alarms.
     async fn listen(mut self) {
-        // Load initial alarms.
-        match Alarms.load().await {
-            Ok(alarms) => self.update(alarms),
-            Err(err) => show_error(err.to_string()),
-        }
-
-        // Get alarms change listener.
-        let mut listener = match Alarms.change_listener().await {
-            Ok(listener) => listener,
+        // Subscribe to DBus events.
+        let mut subscriber = match Subscriber::new().await {
+            Ok(subscriber) => subscriber,
             Err(err) => {
                 show_error(err.to_string());
                 return;
             },
         };
 
-        // Listen for changes.
+        // Seed GTK view with initial alarms.
+        self.update(subscriber.alarms());
+
         loop {
-            self.update(listener.next().await);
+            match subscriber.next().await {
+                // Update alarms.
+                Some(Event::AlarmsChanged(alarms)) => self.update(alarms),
+                // Play alarm sound.
+                Some(Event::Ring(alarm)) => {
+                    let sound = match AlarmSound::play() {
+                        Ok(sound) => sound,
+                        Err(err) => {
+                            eprintln!("Could not play alarm sound: {err}");
+                            continue;
+                        },
+                    };
+                    tokio::time::sleep(StdDuration::from_secs(alarm.ring_seconds as u64)).await;
+                    sound.stop();
+                },
+                None => (),
+            }
         }
     }
 }

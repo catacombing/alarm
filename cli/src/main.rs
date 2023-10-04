@@ -1,10 +1,12 @@
 //! Alarm clock CLI interface.
 
 use std::num::ParseIntError;
-use std::process;
+use std::process::ExitCode;
 use std::str::FromStr;
+use std::time::Duration as StdDuration;
 
-use alarm::Alarms;
+use alarm::audio::AlarmSound;
+use alarm::{Alarms, Event, Subscriber};
 use clap::{Args, Parser, Subcommand};
 use rezz::Alarm;
 use time::error::ComponentRange;
@@ -60,7 +62,7 @@ struct RemoveArgs {
 struct ListArgs {}
 
 #[tokio::main(flavor = "current_thread")]
-pub async fn main() {
+pub async fn main() -> ExitCode {
     let cli = Cli::parse();
 
     match cli.subcommand {
@@ -71,14 +73,20 @@ pub async fn main() {
 
             match Alarms.add(alarm).await {
                 Ok(()) => println!("Added alarm with ID {id:?}"),
-                Err(err) => eprintln!("Could not add alarm: {err}"),
+                Err(err) => {
+                    eprintln!("Could not add alarm: {err}");
+                    return ExitCode::from(1);
+                },
             }
         },
         Subcmd::Remove(args) => {
             for id in &args.id {
                 match Alarms.remove(id.clone()).await {
                     Ok(()) => println!("Removed alarm with ID {:?}", args.id),
-                    Err(err) => eprintln!("Could not remove alarm: {err}"),
+                    Err(err) => {
+                        eprintln!("Could not remove alarm: {err}");
+                        return ExitCode::from(2);
+                    },
                 }
             }
         },
@@ -87,14 +95,14 @@ pub async fn main() {
                 Ok(alarms) => alarms,
                 Err(err) => {
                     eprintln!("Could not read alarms database: {err}");
-                    process::exit(1);
+                    return ExitCode::from(3);
                 },
             };
 
             // Early return without any alarms.
             if alarms.is_empty() {
                 println!("No alarms set");
-                return;
+                return ExitCode::SUCCESS;
             }
 
             // Print header.
@@ -113,11 +121,35 @@ pub async fn main() {
             }
         },
         Subcmd::Daemon(_args) => {
-            if let Err(err) = Alarms.daemon().await {
-                eprintln!("Daemon error: {err}");
+            // Setup listener for DBus events.
+            let mut subscriber = match Subscriber::new().await {
+                Ok(subscriber) => subscriber,
+                Err(err) => {
+                    eprintln!("Could not subscribe to DBus events: {err}");
+                    return ExitCode::from(1);
+                },
+            };
+
+            println!("Successfully started alarm daemon");
+
+            loop {
+                // Play alarm sounds.
+                if let Some(Event::Ring(alarm)) = subscriber.next().await {
+                    let sound = match AlarmSound::play() {
+                        Ok(sound) => sound,
+                        Err(err) => {
+                            eprintln!("Could not play alarm sound: {err}");
+                            continue;
+                        },
+                    };
+                    tokio::time::sleep(StdDuration::from_secs(alarm.ring_seconds as u64)).await;
+                    sound.stop();
+                }
             }
         },
     }
+
+    ExitCode::SUCCESS
 }
 
 /// DateTime wrapper with `FromStr` implementation.
