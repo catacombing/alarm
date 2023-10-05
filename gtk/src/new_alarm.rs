@@ -98,17 +98,24 @@ impl Page<gtk4::Box> for NewAlarmPage {
 /// Ring duration input.
 #[derive(Clone)]
 struct RingDurationInput {
+    container: gtk4::Box,
     dropdown: DropDown,
 }
 
 impl RingDurationInput {
     fn new() -> Self {
-        let options: Vec<_> = RingDuration::all().iter().map(RingDuration::label).collect();
+        let container = gtk4::Box::new(Orientation::Vertical, 10);
 
+        let label = Label::new(Some("Ringing duration"));
+        label.set_halign(Align::Start);
+        container.append(&label);
+
+        let options: Vec<_> = RingDuration::all().iter().map(RingDuration::label).collect();
         let dropdown = DropDown::new(Some(StringList::new(&options)), None::<Expression>);
         dropdown.set_selected(Self::default_offset());
+        container.append(&dropdown);
 
-        Self { dropdown }
+        Self { dropdown, container }
     }
 
     /// Offset of the default option.
@@ -117,8 +124,8 @@ impl RingDurationInput {
     }
 
     /// Get the GTK widget.
-    fn widget(&self) -> &DropDown {
-        &self.dropdown
+    fn widget(&self) -> &gtk4::Box {
+        &self.container
     }
 
     /// Get the selected duration.
@@ -208,11 +215,9 @@ impl TimeInput {
         time_box.append(&time_separator);
         time_box.append(&minutes);
         time_box.set_halign(Align::Center);
-        time_box.set_margin_top(15);
-        time_box.set_margin_end(15);
-        time_box.set_margin_bottom(15);
-        time_box.set_margin_start(15);
-        time_box.set_css_classes(&["time-box"]);
+        time_box.set_margin_top(25);
+        time_box.set_margin_bottom(25);
+        time_box.add_css_class("time-box");
 
         Self { time_box, hours, minutes }
     }
@@ -228,7 +233,7 @@ impl TimeInput {
     /// item in `labels`.
     fn scroll_buttons(labels: &[String]) -> ScrolledWindow {
         let button_box = gtk4::Box::new(Orientation::Vertical, 0);
-        button_box.set_css_classes(&["time-button-box"]);
+        button_box.add_css_class("time-button-box");
 
         // Add placeholders at top to center first button.
         for _ in 0..TIME_BUTTON_COUNT / 2 {

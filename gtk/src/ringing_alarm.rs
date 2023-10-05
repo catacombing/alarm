@@ -38,12 +38,12 @@ impl RingingAlarmPage {
 
         // Add label for alarm name.
         let name_label = Label::new(None);
-        name_label.set_css_classes(&["ringing-name"]);
+        name_label.add_css_class("ringing-name");
         label_box.append(&name_label);
 
         // Add label for alarm time.
         let time_label = Label::new(None);
-        time_label.set_css_classes(&["ringing-time"]);
+        time_label.add_css_class("ringing-time");
         label_box.append(&time_label);
 
         // Add placeholder stop button.

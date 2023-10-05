@@ -3,7 +3,8 @@ use gtk4::gdk::Display;
 use gtk4::glib::{ExitCode, MainContext};
 use gtk4::prelude::*;
 use gtk4::{
-    AlertDialog, Align, Application, ApplicationWindow, Button, CssProvider, Orientation, Window,
+    AlertDialog, Align, Application, ApplicationWindow, Button, CssProvider, Label, Orientation,
+    Window,
 };
 use rezz::Alarm;
 use time::macros::format_description;
@@ -104,6 +105,7 @@ impl Overview {
 
         // Button to create new alarms.
         let new_button = Button::with_label("Add Alarm");
+        new_button.set_margin_top(25);
         container.append(&new_button);
 
         // Handle new alarm button press.
@@ -113,39 +115,6 @@ impl Overview {
         });
 
         Self { container, alarms, ringing_alarm_page }
-    }
-
-    /// Update the view with new alarms.
-    fn update(&mut self, alarms: &[Alarm]) {
-        let time_format = format_description!("[year]-[month]-[day] [hour]:[minute]");
-        let utc_offset = UtcOffset::current_local_offset().unwrap_or(UtcOffset::UTC);
-
-        // Create new alarms container.
-        let container = gtk4::Box::new(Orientation::Vertical, 0);
-        for alarm in alarms {
-            // Add button for each alarm.
-            let time = OffsetDateTime::UNIX_EPOCH + Duration::seconds(alarm.unix_time);
-            let local_time = time.to_offset(utc_offset);
-            let time_str = local_time.format(&time_format).unwrap();
-            let button = Button::with_label(&time_str);
-            container.append(&button);
-
-            // Remove alarm on button press.
-            let id = alarm.id.clone();
-            button.connect_clicked(move |_| {
-                let id = id.clone();
-                MainContext::default().spawn(async move {
-                    if let Err(err) = Alarms.remove(id.clone()).await {
-                        show_error(err.to_string());
-                    }
-                });
-            });
-        }
-
-        // Swap containers.
-        self.container.remove(&self.alarms);
-        self.container.prepend(&container);
-        self.alarms = container;
     }
 
     /// Update view on new/removed alarms.
@@ -171,6 +140,73 @@ impl Overview {
                 None => (),
             }
         }
+    }
+
+    /// Update the view with new alarms.
+    fn update(&mut self, alarms: &[Alarm]) {
+        // Create new alarms container.
+        let container = gtk4::Box::new(Orientation::Vertical, 0);
+        for alarm in alarms {
+            container.append(&Self::alarm_components(alarm));
+        }
+
+        // Swap containers.
+        self.container.remove(&self.alarms);
+        self.container.prepend(&container);
+        self.alarms = container;
+    }
+
+    /// Get the GTK components for an alarm.
+    fn alarm_components(alarm: &Alarm) -> gtk4::Box {
+        // Convert unix time to local time.
+        let utc_offset = UtcOffset::current_local_offset().unwrap_or(UtcOffset::UTC);
+        let time = OffsetDateTime::UNIX_EPOCH + Duration::seconds(alarm.unix_time);
+        let local_time = time.to_offset(utc_offset);
+
+        let container = gtk4::Box::new(Orientation::Horizontal, 0);
+        container.set_margin_start(50);
+        container.set_margin_top(10);
+        container.set_margin_end(50);
+        container.set_margin_bottom(10);
+
+        // Create vertical container to show date below time.
+        let datetime_container = gtk4::Box::new(Orientation::Vertical, 0);
+        datetime_container.set_hexpand(true);
+        container.append(&datetime_container);
+
+        // Add alarm's time.
+        let time_format = format_description!("[hour]:[minute]");
+        let time_str = local_time.format(&time_format).unwrap();
+        let time_label = Label::new(Some(&time_str));
+        time_label.add_css_class("overview-alarm-time");
+        time_label.set_halign(Align::Start);
+        datetime_container.append(&time_label);
+
+        // Add alarms date.
+        let date_format = format_description!("[year]-[month]-[day]");
+        let date_str = local_time.format(&date_format).unwrap();
+        let date_label = Label::new(Some(&date_str));
+        date_label.add_css_class("overview-alarm-date");
+        date_label.set_halign(Align::Start);
+        datetime_container.append(&date_label);
+
+        // Add button to dismiss alarm.
+        let button = Button::from_icon_name("edit-delete");
+        button.add_css_class("overview-alarm-button");
+        container.append(&button);
+
+        // Remove alarm on button press.
+        let id = alarm.id.clone();
+        button.connect_clicked(move |_| {
+            let id = id.clone();
+            MainContext::default().spawn(async move {
+                if let Err(err) = Alarms.remove(id.clone()).await {
+                    show_error(err.to_string());
+                }
+            });
+        });
+
+        container
     }
 }
 

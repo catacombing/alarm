@@ -17,3 +17,17 @@
 .time-box {
     font-size: 1.5em;
 }
+
+.overview-alarm-time {
+    font-size: 3em;
+}
+
+.overview-alarm-button {
+    background: none;
+    box-shadow: none;
+    border: none;
+}
+
+.overview-alarm-button:hover {
+    color: rgb(128, 128, 128);
+}
