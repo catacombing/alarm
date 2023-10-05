@@ -99,8 +99,13 @@ impl RingingAlarmPage {
         });
 
         // Automatically stop alarm after `ring_seconds` elapsed.
-        tokio::time::sleep(StdDuration::from_secs(alarm.ring_seconds as u64)).await;
-        self.stop_button.emit_clicked();
+        //
+        // This is spawned in the background to avoid blocking our event loop.
+        let stop_button = self.stop_button.clone();
+        MainContext::default().spawn_local(async move {
+            tokio::time::sleep(StdDuration::from_secs(alarm.ring_seconds as u64)).await;
+            stop_button.emit_clicked();
+        });
     }
 }
 
