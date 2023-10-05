@@ -77,9 +77,12 @@ impl Subscriber<'static> {
             },
             // Ring the alarm.
             _ = Self::wait_alarm(next_alarm) => {
-                if let Some(alarm) = next_alarm {
-                    return Some(Event::Ring(alarm.clone()));
-                }
+                // Remove the alarm once it starts ringing.
+                let next_id = &next_alarm?.id.clone();
+                let index = self.alarms.iter().position(|alarm| &alarm.id == next_id)?;
+                let alarm = self.alarms.remove(index);
+
+                return Some(Event::Ring(alarm));
             },
         }
 
@@ -93,8 +96,10 @@ impl Subscriber<'static> {
 
     /// Get the next alarm.
     ///
-    /// This will ignore all elapsed alarms and sort the array to ensure optimal
-    /// performance.
+    /// This will ignore all alarms which are elapsed beyond their ringing
+    /// duration.
+    ///
+    /// The input slice is sorted to ensure optimal performance.
     fn next_alarm(alarms: &mut [Alarm]) -> Option<&Alarm> {
         // Get seconds since unix epoch.
         let current_secs =
@@ -102,7 +107,9 @@ impl Subscriber<'static> {
 
         // Get the next non-elapsed alarm.
         alarms.sort_by(|a, b| a.unix_time.cmp(&b.unix_time));
-        alarms.iter().find(|alarm| alarm.unix_time as u64 > current_secs)
+        alarms
+            .iter()
+            .find(|alarm| alarm.unix_time as u64 + alarm.ring_seconds as u64 >= current_secs)
     }
 
     /// Convert alarm to tokio async sleep.
