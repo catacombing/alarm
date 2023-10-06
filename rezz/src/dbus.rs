@@ -224,8 +224,9 @@ impl Rezz {
         };
 
         // Ignore alarms beyond the scheduled one.
+        let current_time = OffsetDateTime::now_utc();
         let time = OffsetDateTime::UNIX_EPOCH + Duration::seconds(next_alarm.unix_time);
-        if wakeup.map_or(false, |wakeup| time >= wakeup) {
+        if wakeup.map_or(false, |wakeup| wakeup > current_time && time >= wakeup) {
             return;
         }
 
