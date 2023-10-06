@@ -250,10 +250,13 @@ impl Rezz {
             let msg = format!("ID {id:?} already exists");
             error!("Could not add alarm: {msg}");
 
-            Err(ZBusError::InvalidArgs(msg))
-        } else {
-            Ok(())
+            return Err(ZBusError::InvalidArgs(msg));
         }
+
+        // Ensure timely RTC clock updates without logind.
+        self.schedule_nearest().await;
+
+        Ok(())
     }
 
     async fn remove_alarm(&self, id: String) -> Result<(), ZBusError> {
@@ -294,6 +297,9 @@ impl Rezz {
         if let Err(err) = rezz::clear_wakeup() {
             error!("Could not clear WKALM: {err}");
         }
+
+        // Ensure timely RTC clock updates without logind.
+        self.schedule_nearest().await;
 
         Ok(())
     }
