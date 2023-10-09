@@ -4,7 +4,8 @@ use alarm::Alarms;
 use gtk4::glib::MainContext;
 use gtk4::prelude::*;
 use gtk4::{
-    Align, Button, DropDown, Expression, Label, Orientation, PolicyType, ScrolledWindow, StringList,
+    Adjustment, Align, Button, DropDown, Expression, Label, Orientation, PolicyType,
+    ScrolledWindow, StringList,
 };
 use rezz::Alarm;
 use time::{Duration, OffsetDateTime, Time};
@@ -13,7 +14,7 @@ use uuid::Uuid;
 use crate::navigation::{Navigator, Page};
 
 /// Height of hour/minute labels.
-const TIME_BLABEL_HEIGHT: i32 = 75;
+const TIME_LABEL_HEIGHT: i32 = 75;
 
 /// Width of hour/minute labels.
 const TIME_LABEL_WIDTH: i32 = 75;
@@ -188,43 +189,71 @@ impl RingDuration {
 /// Alarm time selection input.
 #[derive(Clone)]
 struct TimeInput {
-    time_box: gtk4::Box,
+    container: gtk4::Box,
     hours: ScrolledWindow,
     minutes: ScrolledWindow,
 }
 
 impl TimeInput {
     fn new() -> Self {
-        // Create container for hour selection.
+        let container = gtk4::Box::new(Orientation::Vertical, 0);
+        container.set_halign(Align::Center);
+        container.set_margin_top(25);
+        container.set_margin_bottom(25);
+        container.add_css_class("time-box");
+
+        // Create horizontal box for time selection.
+        let time_box = gtk4::Box::new(Orientation::Horizontal, 0);
+        time_box.set_halign(Align::Center);
+        container.append(&time_box);
+
+        // Create scrolled window for hour selection.
         let hour_labels: Vec<_> = (0..24).map(|hour| hour.to_string()).collect();
         let hours = Self::scroll_buttons(&hour_labels);
+        time_box.append(&hours);
 
         // Hour/Minute separator.
         let time_separator = Label::new(None);
         time_separator.set_markup(r#"<span size="xx-large">:</span>"#);
         time_separator.set_margin_start(10);
         time_separator.set_margin_end(10);
+        time_box.append(&time_separator);
 
-        // Create container for minute selection.
+        // Create scrolled window for minute selection.
         let minute_labels: Vec<_> = (0..60).map(|hour| hour.to_string()).collect();
         let minutes = Self::scroll_buttons(&minute_labels);
-
-        // Create horizontal box for time selection.
-        let time_box = gtk4::Box::new(Orientation::Horizontal, 0);
-        time_box.append(&hours);
-        time_box.append(&time_separator);
         time_box.append(&minutes);
-        time_box.set_halign(Align::Center);
-        time_box.set_margin_top(25);
-        time_box.set_margin_bottom(25);
-        time_box.add_css_class("time-box");
 
-        Self { time_box, hours, minutes }
+        // Add label showing the time remaining until the alarm.
+        let remaining_label = Label::new(None);
+        remaining_label.add_css_class("remaining-label");
+        remaining_label.set_margin_top(10);
+        remaining_label.set_margin_bottom(10);
+        container.append(&remaining_label);
+
+        // Update label when time is changed.
+        let minutes_remaining_label = remaining_label.clone();
+        let hours_adjustment = hours.vadjustment();
+        minutes.vadjustment().connect_value_changed(move |minutes| {
+            let minute = Self::scroll_value(minutes);
+            let hour = Self::scroll_value(&hours_adjustment);
+            let remaining_text = Self::remaining_text(hour, minute);
+            minutes_remaining_label.set_label(&remaining_text);
+        });
+        let minutes_adjustment = minutes.vadjustment();
+        hours.vadjustment().connect_value_changed(move |hours| {
+            let minute = Self::scroll_value(&minutes_adjustment);
+            let hour = Self::scroll_value(hours);
+            let remaining_text = Self::remaining_text(hour, minute);
+            remaining_label.set_label(&remaining_text);
+        });
+
+        Self { container, hours, minutes }
     }
 
     /// Get the GTK widget.
     fn widget(&self) -> &gtk4::Box {
-        &self.time_box
+        &self.container
     }
 
     /// Create a vertically-scrollable button box.
@@ -238,34 +267,34 @@ impl TimeInput {
         // Add placeholders at top to center the first label.
         for _ in 0..(TIME_SLOT_COUNT - 1) / 2 {
             let placeholder = gtk4::Box::new(Orientation::Horizontal, 0);
-            placeholder.set_size_request(TIME_LABEL_WIDTH, TIME_BLABEL_HEIGHT);
+            placeholder.set_size_request(TIME_LABEL_WIDTH, TIME_LABEL_HEIGHT);
             label_box.append(&placeholder);
         }
 
         // Add all labels.
         for label in labels {
             let label = Label::new(Some(&format!("{label:0>2}")));
-            label.set_size_request(TIME_LABEL_WIDTH, TIME_BLABEL_HEIGHT);
+            label.set_size_request(TIME_LABEL_WIDTH, TIME_LABEL_HEIGHT);
             label_box.append(&label);
         }
 
         // Add placeholders at bottom to center last the label.
         for _ in 0..(TIME_SLOT_COUNT - 1) / 2 {
             let placeholder = gtk4::Box::new(Orientation::Horizontal, 0);
-            placeholder.set_size_request(TIME_LABEL_WIDTH, TIME_BLABEL_HEIGHT);
+            placeholder.set_size_request(TIME_LABEL_WIDTH, TIME_LABEL_HEIGHT);
             label_box.append(&placeholder);
         }
 
         // Create scrollbox.
         let scroll = ScrolledWindow::new();
         scroll.set_child(Some(&label_box));
-        scroll.set_size_request(TIME_LABEL_WIDTH, TIME_BLABEL_HEIGHT * TIME_SLOT_COUNT);
+        scroll.set_size_request(TIME_LABEL_WIDTH, TIME_LABEL_HEIGHT * TIME_SLOT_COUNT);
         scroll.set_hscrollbar_policy(PolicyType::External);
         scroll.set_vscrollbar_policy(PolicyType::External);
 
         // Set scroll limits.
         let label_count = (labels.len() as i32 + TIME_SLOT_COUNT - 1) as f64;
-        scroll.vadjustment().set_upper(label_count * TIME_BLABEL_HEIGHT as f64);
+        scroll.vadjustment().set_upper(label_count * TIME_LABEL_HEIGHT as f64);
 
         scroll
     }
@@ -273,22 +302,12 @@ impl TimeInput {
     /// Get the selected minute.
     fn unix_time(&self) -> i64 {
         // Translate scrolling position to time.
-        let pixel_offset_minutes = self.minutes.vadjustment().value();
-        let minute = (pixel_offset_minutes / TIME_BLABEL_HEIGHT as f64).round() as u8;
-        let pixel_offset_hours = self.hours.vadjustment().value();
-        let hour = (pixel_offset_hours / TIME_BLABEL_HEIGHT as f64).round() as u8;
-        let time = Time::from_hms(hour, minute, 0).unwrap();
-
-        // Get next occurrence of the specified time.
-        let mut date_time =
-            OffsetDateTime::now_local().unwrap_or_else(|_| OffsetDateTime::now_utc());
-        if time < date_time.time() {
-            date_time += Duration::days(1);
-        }
-        date_time = date_time.replace_time(time);
+        let minute = Self::scroll_value(&self.minutes.vadjustment());
+        let hour = Self::scroll_value(&self.hours.vadjustment());
+        let alarm_time = Self::alarm_time(hour, minute);
 
         // Convert time to unix time.
-        (date_time - OffsetDateTime::UNIX_EPOCH).whole_seconds()
+        (alarm_time - OffsetDateTime::UNIX_EPOCH).whole_seconds()
     }
 
     /// Reset this input to its defaults.
@@ -301,10 +320,53 @@ impl TimeInput {
         time += Duration::minutes(1);
 
         // Update inputs.
-        let pixel_offset_hours = time.hour() as f64 * TIME_BLABEL_HEIGHT as f64;
+        let pixel_offset_hours = time.hour() as f64 * TIME_LABEL_HEIGHT as f64;
         self.hours.vadjustment().set_value(pixel_offset_hours);
-        let pixel_offset_minutes = time.minute() as f64 * TIME_BLABEL_HEIGHT as f64;
+        let pixel_offset_minutes = time.minute() as f64 * TIME_LABEL_HEIGHT as f64;
         self.minutes.vadjustment().set_value(pixel_offset_minutes);
+    }
+
+    /// Convert scrolled window's value to integer.
+    fn scroll_value(adjustment: &Adjustment) -> u8 {
+        (adjustment.value() / TIME_LABEL_HEIGHT as f64).round() as u8
+    }
+
+    /// Get the alarm time from an hour and minute.
+    fn alarm_time(hour: u8, minute: u8) -> OffsetDateTime {
+        let time = Time::from_hms(hour, minute, 0).unwrap();
+
+        // Get next occurrence of the specified time.
+        let mut date_time =
+            OffsetDateTime::now_local().unwrap_or_else(|_| OffsetDateTime::now_utc());
+        if time < date_time.time() {
+            date_time += Duration::days(1);
+        }
+        date_time = date_time.replace_time(time);
+
+        date_time
+    }
+
+    /// Get the text for the "remaining time until alarm" label.
+    fn remaining_text(hour: u8, minute: u8) -> String {
+        // Get current and alarm time.
+        let now = OffsetDateTime::now_local().unwrap_or_else(|_| OffsetDateTime::now_utc());
+        let alarm_time = Self::alarm_time(hour, minute);
+
+        // Get hours/minutes until alarm.
+        let delta = alarm_time - now;
+        let hours = delta.whole_hours();
+        let minutes = delta.whole_minutes() - 60 * hours;
+
+        // Format hours/minutes.
+        let minute_unit = if minutes > 1 { "minutes" } else { "minute" };
+        if hours == 0 && minutes == 0 {
+            String::from("now")
+        } else if hours == 0 {
+            format!("in {minutes} {minute_unit}")
+        } else {
+            let hour_unit = if hours > 1 { "hours" } else { "hour" };
+            format!("in {hours} {hour_unit} and {minutes} {minute_unit}")
+        }
     }
 }
 
