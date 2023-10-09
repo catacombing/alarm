@@ -12,14 +12,14 @@ use uuid::Uuid;
 
 use crate::navigation::{Navigator, Page};
 
-/// Height of hour/minute buttons.
-const TIME_BUTTON_HEIGHT: i32 = 75;
+/// Height of hour/minute labels.
+const TIME_BLABEL_HEIGHT: i32 = 75;
 
-/// Width of hour/minute buttons.
-const TIME_BUTTON_WIDTH: i32 = 75;
+/// Width of hour/minute labels.
+const TIME_LABEL_WIDTH: i32 = 75;
 
-/// Number of time buttons visible at once.
-const TIME_BUTTON_COUNT: i32 = 3;
+/// Number of time labels visible at once.
+const TIME_SLOT_COUNT: i32 = 3;
 
 /// UI for adding a new alarm.
 pub struct NewAlarmPage {
@@ -232,36 +232,40 @@ impl TimeInput {
     /// This will create a button with the corresponding label text for every
     /// item in `labels`.
     fn scroll_buttons(labels: &[String]) -> ScrolledWindow {
-        let button_box = gtk4::Box::new(Orientation::Vertical, 0);
-        button_box.add_css_class("time-button-box");
+        let label_box = gtk4::Box::new(Orientation::Vertical, 0);
+        label_box.add_css_class("time-input-box");
 
-        // Add placeholders at top to center first button.
-        for _ in 0..TIME_BUTTON_COUNT / 2 {
+        // Add placeholders at top to center the first label.
+        for _ in 0..(TIME_SLOT_COUNT - 1) / 2 {
             let placeholder = gtk4::Box::new(Orientation::Horizontal, 0);
-            placeholder.set_size_request(TIME_BUTTON_WIDTH, TIME_BUTTON_HEIGHT);
-            button_box.append(&placeholder);
+            placeholder.set_size_request(TIME_LABEL_WIDTH, TIME_BLABEL_HEIGHT);
+            label_box.append(&placeholder);
         }
 
-        // Add a button for each label.
+        // Add all labels.
         for label in labels {
             let label = Label::new(Some(&format!("{label:0>2}")));
-            label.set_size_request(TIME_BUTTON_WIDTH, TIME_BUTTON_HEIGHT);
-            button_box.append(&label);
+            label.set_size_request(TIME_LABEL_WIDTH, TIME_BLABEL_HEIGHT);
+            label_box.append(&label);
         }
 
-        // Add placeholders at bottom to center last button.
-        for _ in 0..TIME_BUTTON_COUNT / 2 {
+        // Add placeholders at bottom to center last the label.
+        for _ in 0..(TIME_SLOT_COUNT - 1) / 2 {
             let placeholder = gtk4::Box::new(Orientation::Horizontal, 0);
-            placeholder.set_size_request(TIME_BUTTON_WIDTH, TIME_BUTTON_HEIGHT);
-            button_box.append(&placeholder);
+            placeholder.set_size_request(TIME_LABEL_WIDTH, TIME_BLABEL_HEIGHT);
+            label_box.append(&placeholder);
         }
 
         // Create scrollbox.
         let scroll = ScrolledWindow::new();
-        scroll.set_child(Some(&button_box));
-        scroll.set_size_request(TIME_BUTTON_WIDTH, TIME_BUTTON_HEIGHT * TIME_BUTTON_COUNT);
+        scroll.set_child(Some(&label_box));
+        scroll.set_size_request(TIME_LABEL_WIDTH, TIME_BLABEL_HEIGHT * TIME_SLOT_COUNT);
         scroll.set_hscrollbar_policy(PolicyType::External);
         scroll.set_vscrollbar_policy(PolicyType::External);
+
+        // Set scroll limits.
+        let label_count = (labels.len() as i32 + TIME_SLOT_COUNT - 1) as f64;
+        scroll.vadjustment().set_upper(label_count * TIME_BLABEL_HEIGHT as f64);
 
         scroll
     }
@@ -270,9 +274,9 @@ impl TimeInput {
     fn unix_time(&self) -> i64 {
         // Translate scrolling position to time.
         let pixel_offset_minutes = self.minutes.vadjustment().value();
-        let minute = (pixel_offset_minutes / TIME_BUTTON_HEIGHT as f64).round() as u8;
+        let minute = (pixel_offset_minutes / TIME_BLABEL_HEIGHT as f64).round() as u8;
         let pixel_offset_hours = self.hours.vadjustment().value();
-        let hour = (pixel_offset_hours / TIME_BUTTON_HEIGHT as f64).round() as u8;
+        let hour = (pixel_offset_hours / TIME_BLABEL_HEIGHT as f64).round() as u8;
         let time = Time::from_hms(hour, minute, 0).unwrap();
 
         // Get next occurrence of the specified time.
@@ -289,8 +293,18 @@ impl TimeInput {
 
     /// Reset this input to its defaults.
     fn reset(&self) {
-        self.hours.vadjustment().set_value(0.);
-        self.minutes.vadjustment().set_value(0.);
+        // Get current time.
+        let now = OffsetDateTime::now_local().unwrap_or_else(|_| OffsetDateTime::now_utc());
+        let mut time = now.time();
+
+        // Add one minute to ensure time is in the future.
+        time += Duration::minutes(1);
+
+        // Update inputs.
+        let pixel_offset_hours = time.hour() as f64 * TIME_BLABEL_HEIGHT as f64;
+        self.hours.vadjustment().set_value(pixel_offset_hours);
+        let pixel_offset_minutes = time.minute() as f64 * TIME_BLABEL_HEIGHT as f64;
+        self.minutes.vadjustment().set_value(pixel_offset_minutes);
     }
 }
 
