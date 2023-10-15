@@ -6,6 +6,7 @@ use std::time::Duration as StdDuration;
 use alarm::audio::AlarmSound;
 use alarm::Alarms;
 use gtk4::glib::MainContext;
+use gtk4::pango::WrapMode;
 use gtk4::prelude::*;
 use gtk4::{Align, Button, Label, Orientation};
 use rezz::Alarm;
@@ -39,6 +40,8 @@ impl RingingAlarmPage {
         // Add label for alarm name.
         let name_label = Label::new(None);
         name_label.add_css_class("ringing-name");
+        name_label.set_wrap(true);
+        name_label.set_wrap_mode(WrapMode::WordChar);
         label_box.append(&name_label);
 
         // Add label for alarm time.
