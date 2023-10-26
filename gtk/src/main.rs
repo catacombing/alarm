@@ -1,6 +1,11 @@
+use std::cell::Cell;
+use std::collections::HashMap;
+
 use alarm::{Alarms, Event, Subscriber};
 use gtk4::gdk::Display;
-use gtk4::glib::{ExitCode, MainContext};
+use gtk4::gio::ApplicationFlags;
+use gtk4::glib::char::Char;
+use gtk4::glib::{ExitCode, MainContext, OptionArg, OptionFlags};
 use gtk4::prelude::*;
 use gtk4::{
     AlertDialog, Align, Application, ApplicationWindow, Button, CssProvider, Label, Orientation,
@@ -10,6 +15,7 @@ use rezz::Alarm;
 use time::macros::format_description;
 use time::util::local_offset::{self, Soundness};
 use time::{Duration, OffsetDateTime, UtcOffset};
+use tokio::sync::mpsc::{self, Receiver, Sender};
 
 use crate::navigation::{Navigator, Page};
 use crate::new_alarm::NewAlarmPage;
@@ -28,7 +34,20 @@ async fn main() -> ExitCode {
     unsafe { local_offset::set_soundness(Soundness::Unsound) };
 
     // Setup application.
-    let application = Application::builder().application_id(APP_ID).build();
+    let application = Application::builder()
+        .application_id(APP_ID)
+        .flags(ApplicationFlags::HANDLES_COMMAND_LINE)
+        .build();
+
+    // Add CLI flags.
+    application.add_main_option(
+        "daemon",
+        Char::from(b'd'),
+        OptionFlags::NONE,
+        OptionArg::None,
+        "Launch application in the background",
+        None,
+    );
 
     // Load CSS.
     application.connect_startup(|_| {
@@ -44,42 +63,161 @@ async fn main() -> ExitCode {
         );
     });
 
-    // Handle application activation event.
-    application.connect_activate(activate);
+    // Create channel for spawning new windows.
+    let (new_window_tx, new_window_rx) = mpsc::channel(16);
+
+    // Initialize state shared across all windows.
+    let state = AlarmGtk::new(&application, new_window_rx);
+
+    // Handle CLI from any instance.
+    let state = Cell::new(Some(state));
+    application.connect_command_line(move |_app, cmdline| {
+        let daemon_mode = cmdline.options_dict().contains("daemon");
+        match state.take() {
+            // Start event loop on first run.
+            Some(state) => state.start_master(daemon_mode),
+            // Only launch windows if daemon mode flag wasn't passed.
+            None if !daemon_mode => {
+                let _ = new_window_tx.try_send(());
+            },
+            None => eprintln!("Error: Daemon mode already running"),
+        }
+
+        0
+    });
 
     // Run application.
     application.run()
 }
 
-/// Bootstrap UI.
-fn activate(app: &Application) {
-    // Configure window settings.
-    let window = ApplicationWindow::builder().application(app).title("Alarm").build();
+/// Main application state.
+struct AlarmGtk {
+    windows: HashMap<u32, Overview>,
+    window_close_tx: Sender<u32>,
+    window_close_rx: Receiver<u32>,
+    new_window_rx: Receiver<()>,
+    app: Application,
+}
 
-    // Setup page navigation.
-    let navigator = Navigator::new();
-    window.set_child(Some(navigator.widget()));
+impl AlarmGtk {
+    fn new(app: &Application, new_window_rx: Receiver<()>) -> Self {
+        let (window_close_tx, window_close_rx) = mpsc::channel(256);
+        Self {
+            window_close_tx,
+            window_close_rx,
+            new_window_rx,
+            app: app.clone(),
+            windows: Default::default(),
+        }
+    }
 
-    // Add alarm creation page.
-    let new_alarm_page = NewAlarmPage::new(navigator.clone());
-    navigator.add(&new_alarm_page);
+    /// Start the master window.
+    ///
+    /// This will always start the event loop and open a new window if not
+    /// launched in daemon mode.
+    fn start_master(mut self, daemon_mode: bool) {
+        let mut daemon_guard = None;
+        if daemon_mode {
+            // Prevent automatic exit when created without any windows.
+            daemon_guard = Some(self.app.hold());
+        } else {
+            // Spawn initial window when not running in daemon mode.
+            self.open_window();
+        }
 
-    // Add ringing alarm page.
-    let ringing_alarm_page = RingingAlarmPage::new(navigator.clone());
-    navigator.add(&ringing_alarm_page);
+        // Run main event loop.
+        MainContext::default().spawn_local(async move {
+            self.listen().await;
 
-    // Add landing page.
-    let overview = Overview::new(navigator.clone(), new_alarm_page, ringing_alarm_page);
-    navigator.add(&overview);
+            // Release the GIO application guard, closing the application.
+            daemon_guard.take();
+        });
+    }
 
-    // Show window.
-    navigator.show(Overview::id());
-    window.present();
+    /// Handle events.
+    async fn listen(mut self) {
+        // Subscribe to DBus events.
+        let mut subscriber = match Subscriber::new().await {
+            Ok(subscriber) => subscriber,
+            Err(err) => {
+                if self.windows.is_empty() {
+                    eprintln!("{err}");
+                } else {
+                    show_error(err.to_string());
+                }
+                return;
+            },
+        };
 
-    // Handle overview alarm updates.
-    MainContext::default().spawn_local(async {
-        overview.listen().await;
-    });
+        // If we're not running in daemon mode, seed view with initial alarms.
+        self.update_alarms(subscriber.alarms());
+
+        loop {
+            tokio::select! {
+                Some(id) = self.window_close_rx.recv() => {
+                    self.windows.remove(&id);
+                },
+                _ = self.new_window_rx.recv() => self.open_window(),
+                Some(event) = subscriber.next() => match event {
+                    // Handle new/removed alarms.
+                    Event::AlarmsChanged(alarms) => self.update_alarms(alarms),
+                    // Handle ringing alarms.
+                    Event::Ring(alarm) => {
+                        // Ensure at least one window is open.
+                        if self.windows.is_empty() {
+                            self.open_window();
+                        }
+
+                        // Ring any availabel window.
+                        if let Some(window) = self.windows.values_mut().next() {
+                            window.ring(alarm).await;
+                        }
+                    },
+                }
+            }
+        }
+    }
+
+    /// Update the UI's alarms.
+    fn update_alarms(&mut self, alarms: &[Alarm]) {
+        for window in self.windows.values_mut() {
+            window.update(alarms);
+        }
+    }
+
+    /// Open the GTK4 UI.
+    fn open_window(&mut self) {
+        // Configure window settings.
+        let window = ApplicationWindow::builder().application(&self.app).title("Alarm").build();
+
+        // Setup page navigation.
+        let navigator = Navigator::new();
+        window.set_child(Some(navigator.widget()));
+
+        // Add alarm creation page.
+        let new_alarm_page = NewAlarmPage::new(navigator.clone());
+        navigator.add(&new_alarm_page);
+
+        // Add ringing alarm page.
+        let ringing_alarm_page = RingingAlarmPage::new(navigator.clone());
+        navigator.add(&ringing_alarm_page);
+
+        // Add landing page.
+        let overview = Overview::new(navigator.clone(), new_alarm_page, ringing_alarm_page);
+        navigator.add(&overview);
+
+        // Show window.
+        navigator.show(Overview::id());
+        window.present();
+
+        // Clear UI once window is destroyed.
+        let exit_tx = self.window_close_tx.clone();
+        window.connect_destroy(move |window| {
+            let _ = exit_tx.try_send(window.id());
+        });
+
+        self.windows.insert(window.id(), overview);
+    }
 }
 
 /// Alarm overview and landing page.
@@ -117,31 +255,6 @@ impl Overview {
         Self { container, alarms, ringing_alarm_page }
     }
 
-    /// Update view on new/removed alarms.
-    async fn listen(mut self) {
-        // Subscribe to DBus events.
-        let mut subscriber = match Subscriber::new().await {
-            Ok(subscriber) => subscriber,
-            Err(err) => {
-                show_error(err.to_string());
-                return;
-            },
-        };
-
-        // Seed GTK view with initial alarms.
-        self.update(subscriber.alarms());
-
-        loop {
-            match subscriber.next().await {
-                // Update alarms.
-                Some(Event::AlarmsChanged(alarms)) => self.update(alarms),
-                // Play alarm sound.
-                Some(Event::Ring(alarm)) => self.ringing_alarm_page.ring(alarm).await,
-                None => (),
-            }
-        }
-    }
-
     /// Update the view with new alarms.
     fn update(&mut self, alarms: &[Alarm]) {
         // Create new alarms container.
@@ -154,6 +267,11 @@ impl Overview {
         self.container.remove(&self.alarms);
         self.container.prepend(&container);
         self.alarms = container;
+    }
+
+    /// Ring an alarm.
+    async fn ring(&mut self, alarm: Alarm) {
+        self.ringing_alarm_page.ring(alarm).await;
     }
 
     /// Get the GTK components for an alarm.
