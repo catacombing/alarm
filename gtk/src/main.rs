@@ -244,6 +244,9 @@ impl Overview {
         // Button to create new alarms.
         let new_button = Button::with_label("Add Alarm");
         new_button.set_margin_top(25);
+        new_button.set_margin_end(25);
+        new_button.set_margin_bottom(25);
+        new_button.set_margin_start(25);
         container.append(&new_button);
 
         // Handle new alarm button press.

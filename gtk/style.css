@@ -2,6 +2,11 @@
     border-radius: 0;
 }
 
+button {
+    padding: 10px;
+    font-size: 1.1em;
+}
+
 .ringing-name {
     font-size: 2em;
 }
