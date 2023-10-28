@@ -9,7 +9,7 @@ use gtk4::glib::{ExitCode, MainContext, OptionArg, OptionFlags};
 use gtk4::prelude::*;
 use gtk4::{
     AlertDialog, Align, Application, ApplicationWindow, Button, CssProvider, Label, Orientation,
-    Window,
+    ScrolledWindow, Window,
 };
 use rezz::Alarm;
 use time::macros::format_description;
@@ -223,8 +223,8 @@ impl AlarmGtk {
 /// Alarm overview and landing page.
 pub struct Overview {
     ringing_alarm_page: RingingAlarmPage,
+    alarms: ScrolledWindow,
     container: gtk4::Box,
-    alarms: gtk4::Box,
 }
 
 impl Overview {
@@ -237,8 +237,7 @@ impl Overview {
         container.set_valign(Align::End);
 
         // Create alarms container.
-        let alarms = gtk4::Box::new(Orientation::Vertical, 0);
-        alarms.set_valign(Align::End);
+        let alarms = ScrolledWindow::new();
         container.append(&alarms);
 
         // Button to create new alarms.
@@ -266,10 +265,18 @@ impl Overview {
             container.append(&Self::alarm_components(alarm));
         }
 
+        // Create scroll box.
+        let scroll = ScrolledWindow::new();
+        scroll.set_propagate_natural_height(true);
+        scroll.set_child(Some(&container));
+
+        // Put scrollbox at bottom by default.
+        scroll.vadjustment().connect_upper_notify(|adj| adj.set_value(adj.upper()));
+
         // Swap containers.
         self.container.remove(&self.alarms);
-        self.container.prepend(&container);
-        self.alarms = container;
+        self.container.prepend(&scroll);
+        self.alarms = scroll;
     }
 
     /// Ring an alarm.
