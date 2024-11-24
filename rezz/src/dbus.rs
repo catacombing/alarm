@@ -226,7 +226,7 @@ impl Rezz {
         // Ignore alarms beyond the scheduled one.
         let current_time = OffsetDateTime::now_utc();
         let time = OffsetDateTime::UNIX_EPOCH + Duration::seconds(next_alarm.unix_time);
-        if wakeup.map_or(false, |wakeup| wakeup > current_time && time >= wakeup) {
+        if wakeup.is_some_and(|wakeup| wakeup > current_time && time >= wakeup) {
             return;
         }
 
@@ -328,7 +328,8 @@ impl Store {
             IoError::new(IoErrorKind::InvalidInput, msg)
         })?;
         fs::create_dir_all(parent)?;
-        let mut db = File::options().read(true).write(true).create(true).open(db_path)?;
+        let mut db =
+            File::options().read(true).write(true).create(true).truncate(false).open(db_path)?;
 
         // Parse existing alarms.
         let mut content = String::new();
