@@ -10,9 +10,9 @@ edition = "2021"
 
 [dependencies]
 alarm = { version = "0.1.0", path = "../" }
-gtk4 = { version = "0.6.2", features = ["v4_10"] }
+gtk4 = { version = "0.9.6", features = ["v4_10"] }
 rezz = { version = "0.1.0", path = "../rezz" }
-thiserror = "1.0.48"
+thiserror = "2.0.11"
 time = { version = "0.3.29", features = ["macros", "formatting", "local-offset"] }
 tokio = { version = "1.32.0", features = ["macros", "rt-multi-thread"] }
 uuid = { version = "1.4.1", features = ["v4"] }

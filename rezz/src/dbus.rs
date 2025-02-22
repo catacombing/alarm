@@ -7,15 +7,16 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
+use futures_util::stream::StreamExt;
 use rezz::Alarm;
 use time::{Duration, OffsetDateTime};
 use tokio::sync::{watch, RwLock};
 use tokio::time as tokio_time;
 use tracing::{debug, error, info, warn};
-use zbus::export::futures_util::stream::StreamExt;
+use zbus::connection::Builder;
 use zbus::fdo::Error as ZBusError;
 use zbus::zvariant::OwnedFd;
-use zbus::{Connection, ConnectionBuilder};
+use zbus::Connection;
 
 use crate::logind::{ManagerProxy, PrepareForSleepStream};
 
@@ -71,7 +72,7 @@ pub async fn launch() {
 
                 let object_server = connection.object_server();
                 let iface = object_server.interface::<_, Rezz>("/org/catacombing/rezz").await.unwrap();
-                let _ = rezz.alarms_changed(iface.signal_context()).await;
+                let _ = rezz.alarms_changed(iface.signal_emitter()).await;
             },
             // Update expired alarms.
             _ = wait_alarm => debug!("Alarm expired"),
@@ -105,7 +106,7 @@ pub async fn launch() {
 
 /// Establish DBus system bus connection.
 async fn create_connection(rezz: Rezz) -> Result<Connection, zbus::Error> {
-    ConnectionBuilder::system()?
+    Builder::system()?
         .name("org.catacombing.rezz")?
         .serve_at("/org/catacombing/rezz", rezz)?
         .build()
@@ -113,10 +114,10 @@ async fn create_connection(rezz: Rezz) -> Result<Connection, zbus::Error> {
 }
 
 /// Get a stream of logind suspend/wakeup events.
-async fn logind_suspend_stream<'a>(
-    connection: &'a Connection,
+async fn logind_suspend_stream(
+    connection: &Connection,
     rezz: &mut Rezz,
-) -> Result<PrepareForSleepStream<'a>, Box<dyn Error>> {
+) -> Result<PrepareForSleepStream, Box<dyn Error>> {
     // Setup DBus logind suspend listener.
     let logind = ManagerProxy::new(connection).await?;
     let suspend_stream = logind.receive_prepare_for_sleep().await?;
@@ -133,11 +134,13 @@ async fn logind_suspend_stream<'a>(
 ///
 /// This will use a fixed timer on systems without logind and will always return
 /// `true`.
-async fn await_suspend(logind_stream: &mut Option<PrepareForSleepStream<'_>>) -> bool {
+async fn await_suspend(logind_stream: &mut Option<PrepareForSleepStream>) -> bool {
     match logind_stream {
         Some(stream) => {
             let next_event = stream.next().await;
-            next_event.and_then(|event| event.body::<bool>().ok()).unwrap_or(true)
+            next_event
+                .and_then(|event| event.message().body().deserialize::<bool>().ok())
+                .unwrap_or(true)
         },
         None => {
             tokio_time::sleep(MANUAL_UPDATE_INTERVAL).await;
@@ -237,7 +240,7 @@ impl Rezz {
     }
 }
 
-#[zbus::dbus_interface(name = "org.catacombing.rezz")]
+#[zbus::interface(name = "org.catacombing.rezz")]
 impl Rezz {
     async fn add_alarm(&mut self, alarm: Alarm) -> Result<(), ZBusError> {
         let id = alarm.id.clone();
@@ -304,7 +307,7 @@ impl Rezz {
         Ok(())
     }
 
-    #[dbus_interface(property)]
+    #[zbus(property)]
     async fn alarms(&self) -> Vec<Alarm> {
         let alarms = self.alarms.read().await;
         alarms.alarms.clone()

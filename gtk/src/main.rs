@@ -13,7 +13,6 @@ use gtk4::{
 };
 use rezz::Alarm;
 use time::macros::format_description;
-use time::util::local_offset::{self, Soundness};
 use time::{Duration, OffsetDateTime, UtcOffset};
 use tokio::sync::mpsc::{self, Receiver, Sender};
 
@@ -30,9 +29,6 @@ const APP_ID: &str = "catacomb.Alarm";
 
 #[tokio::main]
 async fn main() -> ExitCode {
-    // Allow retrieving local offset despite multi-threading.
-    unsafe { local_offset::set_soundness(Soundness::Unsound) };
-
     // Setup application.
     let application = Application::builder()
         .application_id(APP_ID)

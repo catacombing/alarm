@@ -2,7 +2,8 @@ use std::time::{Duration, SystemTime};
 
 use rezz::Alarm;
 use tokio_stream::StreamExt;
-use zbus::{Connection, PropertyStream};
+use zbus::proxy::PropertyStream;
+use zbus::Connection;
 
 use crate::dbus::RezzProxy;
 use crate::error::Error;

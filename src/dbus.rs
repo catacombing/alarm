@@ -1,18 +1,18 @@
 //! Rezz DBus interface.
 
 use rezz::Alarm;
-use zbus::dbus_proxy;
+use zbus::proxy;
 
-#[dbus_proxy(
+#[proxy(
     interface = "org.catacombing.rezz",
     default_service = "org.catacombing.rezz",
     default_path = "/org/catacombing/rezz"
 )]
-trait Rezz {
-    fn add_alarm(&self, alarm: Alarm) -> zbus::Result<()>;
+pub trait Rezz {
+    async fn add_alarm(&self, alarm: Alarm) -> zbus::Result<()>;
 
-    fn remove_alarm(&self, id: String) -> zbus::Result<()>;
+    async fn remove_alarm(&self, id: String) -> zbus::Result<()>;
 
-    #[dbus_proxy(property)]
+    #[zbus(property)]
     fn alarms(&self) -> zbus::Result<Vec<Alarm>>;
 }
