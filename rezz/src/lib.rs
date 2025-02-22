@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::fs::File;
 use std::io;
 use std::mem::MaybeUninit;
@@ -47,7 +48,7 @@ pub fn clear_wakeup() -> Result<(), Error> {
 }
 
 /// Single alarm.
-#[derive(Deserialize, Serialize, Type, Value, OwnedValue, Clone, PartialEq, Debug)]
+#[derive(Deserialize, Serialize, Type, Value, OwnedValue, Clone, PartialEq, Eq, Debug)]
 pub struct Alarm {
     pub id: String,
     pub unix_time: i64,
@@ -57,5 +58,23 @@ pub struct Alarm {
 impl Alarm {
     pub fn new(id: impl Into<String>, unix_time: i64, ring_seconds: u32) -> Self {
         Self { id: id.into(), unix_time, ring_seconds }
+    }
+}
+
+impl PartialOrd for Alarm {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Alarm {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match self.unix_time.cmp(&other.unix_time) {
+            Ordering::Equal => match self.id.cmp(&other.id) {
+                Ordering::Equal => self.ring_seconds.cmp(&other.ring_seconds),
+                ordering => ordering,
+            },
+            ordering => ordering,
+        }
     }
 }

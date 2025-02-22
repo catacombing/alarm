@@ -58,7 +58,8 @@ impl Subscriber<'static> {
         let rezz = RezzProxy::new(&connection).await?;
 
         // Create listener for alarms change.
-        let alarms = rezz.alarms().await?;
+        let mut alarms = rezz.alarms().await?;
+        alarms.sort_unstable();
         let alarms_stream = rezz.receive_alarms_changed().await;
 
         Ok(Self { alarms_stream, alarms })
@@ -71,8 +72,11 @@ impl Subscriber<'static> {
         tokio::select! {
             // Handle alarm updates.
             Some(new_alarms) = self.alarms_stream.next() => {
-                if let Ok(alarms) = new_alarms.get().await {
+                if let Ok(mut alarms) = new_alarms.get().await {
+                    // Ensure alarms are always sorted by ring time.
+                    alarms.sort_unstable();
                     self.alarms = alarms;
+
                     return Some(Event::AlarmsChanged(&self.alarms));
                 }
             },
@@ -91,6 +95,9 @@ impl Subscriber<'static> {
     }
 
     /// Get all alarms.
+    ///
+    /// This list of alarms will always be ordered by alarm time, with the
+    /// smallest timestamp being first in the slice.
     pub fn alarms(&self) -> &[Alarm] {
         self.alarms.as_slice()
     }
@@ -107,7 +114,6 @@ impl Subscriber<'static> {
             SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
 
         // Get the next non-elapsed alarm.
-        alarms.sort_by(|a, b| a.unix_time.cmp(&b.unix_time));
         alarms
             .iter()
             .find(|alarm| alarm.unix_time as u64 + alarm.ring_seconds as u64 >= current_secs)
