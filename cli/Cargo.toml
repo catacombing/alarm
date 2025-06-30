@@ -1,6 +1,6 @@
 [package]
 name = "alarm-cli"
-version = "0.1.0"
+version = "1.0.0"
 description = "CLI alarm clock"
 authors = ["Christian Duerr <contact@christianduerr.com>"]
 repository = "https://github.com/catacombing/alarm"
@@ -9,7 +9,7 @@ license = "GPL-3.0"
 edition = "2021"
 
 [dependencies]
-alarm = { version = "0.1.0", path = "../" }
+alarm = { version = "1.0.0", path = "../" }
 clap = { version = "4.4.4", features = ["derive"] }
 rezz = { version = "0.1.0", path = "../rezz" }
 thiserror = "2.0.11"
