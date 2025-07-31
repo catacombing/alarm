@@ -2,3 +2,7 @@
 Type=Application
 Name=Alarm
 Exec=alarm-gtk
+Comment=Wayland alarm clock
+Icon=Alarm
+Categories=Utility;Clock
+Keywords=mobile;wayland

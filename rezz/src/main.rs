@@ -1,4 +1,4 @@
-use tracing::{subscriber, Level};
+use tracing::{Level, subscriber};
 use tracing_subscriber::FmtSubscriber;
 
 mod dbus;

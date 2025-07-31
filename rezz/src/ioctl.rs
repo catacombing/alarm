@@ -44,11 +44,7 @@ impl From<OffsetDateTime> for RtcWkalm {
 
 impl From<RtcWkalm> for Option<OffsetDateTime> {
     fn from(wkalm: RtcWkalm) -> Self {
-        if wkalm.enabled {
-            OffsetDateTime::try_from(wkalm.time).ok()
-        } else {
-            None
-        }
+        if wkalm.enabled { OffsetDateTime::try_from(wkalm.time).ok() } else { None }
     }
 }
 

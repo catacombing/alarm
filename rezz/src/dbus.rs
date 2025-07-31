@@ -10,13 +10,13 @@ use std::time::Duration as StdDuration;
 use futures_util::stream::StreamExt;
 use rezz::Alarm;
 use time::{Duration, OffsetDateTime};
-use tokio::sync::{watch, RwLock};
+use tokio::sync::{RwLock, watch};
 use tokio::time as tokio_time;
 use tracing::{debug, error, info, warn};
+use zbus::Connection;
 use zbus::connection::Builder;
 use zbus::fdo::Error as ZBusError;
 use zbus::zvariant::OwnedFd;
-use zbus::Connection;
 
 use crate::logind::{ManagerProxy, PrepareForSleepStream};
 

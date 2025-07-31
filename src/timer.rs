@@ -11,7 +11,7 @@ use std::mem::MaybeUninit;
 use std::ptr;
 use std::time::SystemTime;
 
-use tokio::signal::unix::{signal, SignalKind};
+use tokio::signal::unix::{SignalKind, signal};
 
 /// Create a new timer.
 unsafe fn add_timer(seconds: i64) -> Result<libc::timer_t, IoError> {
