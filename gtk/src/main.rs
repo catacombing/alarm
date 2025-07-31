@@ -79,7 +79,7 @@ async fn main() -> ExitCode {
             None => eprintln!("Error: Daemon mode already running"),
         }
 
-        0
+        ExitCode::SUCCESS
     });
 
     // Run application.

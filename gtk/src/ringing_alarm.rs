@@ -3,8 +3,8 @@
 use std::cell::Cell;
 use std::time::Duration as StdDuration;
 
-use alarm::audio::AlarmSound;
 use alarm::Alarms;
+use alarm::audio::AlarmSound;
 use gtk4::glib::MainContext;
 use gtk4::pango::WrapMode;
 use gtk4::prelude::*;

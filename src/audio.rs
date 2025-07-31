@@ -3,7 +3,7 @@
 use std::io::Cursor;
 use std::time::Duration;
 
-use rodio::{Decoder, OutputStream, Sink, Source};
+use rodio::{Decoder, OutputStream, OutputStreamBuilder, Sink, Source};
 
 use crate::error::Error;
 
@@ -33,7 +33,7 @@ impl AlarmSound {
     /// on it.
     pub fn play() -> Result<Self, Error> {
         // Parse the audio source file.
-        let (_stream, stream_handle) = OutputStream::try_default()?;
+        let stream = OutputStreamBuilder::open_default_stream()?;
         let audio_buffer = Cursor::new(ALARM_AUDIO);
         let source = Decoder::new(audio_buffer).unwrap();
 
@@ -41,10 +41,10 @@ impl AlarmSound {
         let source = source.take_duration(ALARM_AUDIO_LENGTH).repeat_infinite();
 
         // Create a sink to allow playback control.
-        let sink = Sink::try_new(&stream_handle).unwrap();
+        let sink = Sink::connect_new(stream.mixer());
         sink.append(source);
 
-        Ok(Self { _stream, sink })
+        Ok(Self { _stream: stream, sink })
     }
 
     /// Stop the alarm playback.

@@ -15,42 +15,46 @@ use tokio::signal::unix::{signal, SignalKind};
 
 /// Create a new timer.
 unsafe fn add_timer(seconds: i64) -> Result<libc::timer_t, IoError> {
-    // Get current time.
-    let mut now = MaybeUninit::<libc::timespec>::uninit();
-    if libc::clock_gettime(libc::CLOCK_REALTIME, now.as_mut_ptr()) != 0 {
-        return Err(IoError::last_os_error());
-    }
+    unsafe {
+        // Get current time.
+        let mut now = MaybeUninit::<libc::timespec>::uninit();
+        if libc::clock_gettime(libc::CLOCK_REALTIME, now.as_mut_ptr()) != 0 {
+            return Err(IoError::last_os_error());
+        }
 
-    // Calculate target wakeup time.
-    let mut time = now.assume_init();
-    time.tv_sec += seconds as libc::time_t;
+        // Calculate target wakeup time.
+        let mut time = now.assume_init();
+        time.tv_sec += seconds as libc::time_t;
 
-    // Create the timer.
-    let mut timer = MaybeUninit::<libc::timer_t>::uninit();
-    let mut event = MaybeUninit::<libc::sigevent>::zeroed().assume_init();
-    event.sigev_signo = SignalKind::alarm().as_raw_value();
-    event.sigev_notify = libc::SIGEV_SIGNAL;
-    if libc::timer_create(libc::CLOCK_REALTIME, &mut event, timer.as_mut_ptr()) != 0 {
-        return Err(IoError::last_os_error());
-    }
-    let timer = timer.assume_init();
+        // Create the timer.
+        let mut timer = MaybeUninit::<libc::timer_t>::uninit();
+        let mut event = MaybeUninit::<libc::sigevent>::zeroed().assume_init();
+        event.sigev_signo = SignalKind::alarm().as_raw_value();
+        event.sigev_notify = libc::SIGEV_SIGNAL;
+        if libc::timer_create(libc::CLOCK_REALTIME, &mut event, timer.as_mut_ptr()) != 0 {
+            return Err(IoError::last_os_error());
+        }
+        let timer = timer.assume_init();
 
-    // Activate the timer.
-    let timerspec =
-        libc::itimerspec { it_interval: libc::timespec { tv_sec: 0, tv_nsec: 0 }, it_value: time };
-    let result = libc::timer_settime(timer, libc::TIMER_ABSTIME, &timerspec, ptr::null_mut());
-    match result {
-        0 => Ok(timer),
-        _ => {
-            remove_timer(timer)?;
-            Err(IoError::last_os_error())
-        },
+        // Activate the timer.
+        let timerspec = libc::itimerspec {
+            it_interval: libc::timespec { tv_sec: 0, tv_nsec: 0 },
+            it_value: time,
+        };
+        let result = libc::timer_settime(timer, libc::TIMER_ABSTIME, &timerspec, ptr::null_mut());
+        match result {
+            0 => Ok(timer),
+            _ => {
+                remove_timer(timer)?;
+                Err(IoError::last_os_error())
+            },
+        }
     }
 }
 
 /// Delete an existing timer.
 unsafe fn remove_timer(timer: libc::timer_t) -> Result<(), IoError> {
-    match libc::timer_delete(timer) {
+    match unsafe { libc::timer_delete(timer) } {
         0 => Ok(()),
         _ => Err(IoError::last_os_error()),
     }

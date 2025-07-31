@@ -3,18 +3,18 @@ name = "rezz"
 version = "0.1.0"
 description = "DBus RTC alarm clock daemon"
 repository = "https://github.com/catacombing/alarm"
-rust-version = "1.77.0"
 license = "GPL-3.0"
-edition = "2021"
+rust-version.workspace = true
+edition.workspace = true
 
 [dependencies]
-nix = { version = "0.29.0", features = ["ioctl"] }
-serde = "1.0.188"
-serde_json = "1.0.107"
-thiserror = "2.0.11"
-time = { version = "0.3.22", features = ["local-offset"] }
-tokio = { version = "1.32.0", features = ["macros"] }
-tracing = "0.1.37"
-tracing-subscriber = "0.3.17"
-zbus = { version = "5.5.0", default-features = false, features = ["tokio"] }
-futures-util = "0.3.31"
+futures-util.workspace = true
+nix = { workspace = true, features = ["ioctl"] }
+serde_json.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+time = { workspace = true, features = ["local-offset"] }
+tokio = { workspace = true, features = ["macros"] }
+tracing-subscriber.workspace = true
+tracing.workspace = true
+zbus = { workspace = true, features = ["tokio"] }
