@@ -19,7 +19,7 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
 name = "alarm"
-version = "1.1.0"
+version = "1.1.1"
 dependencies = [
  "libc",
  "rezz",
@@ -33,7 +33,7 @@ dependencies = [
 
 [[package]]
 name = "alarm-cli"
-version = "1.1.0"
+version = "1.1.1"
 dependencies = [
  "alarm",
  "clap",
@@ -46,7 +46,7 @@ dependencies = [
 
 [[package]]
 name = "alarm-gtk"
-version = "1.1.0"
+version = "1.1.1"
 dependencies = [
  "alarm",
  "gtk4",
@@ -1326,7 +1326,7 @@ checksum = "69cdb34c158ceb288df11e18b4bd39de994f6657d83847bdffdbd7f346754b0f"
 
 [[package]]
 name = "rezz"
-version = "1.1.0"
+version = "1.1.1"
 dependencies = [
  "futures-util",
  "nix",
